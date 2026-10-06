@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html { height: 100%; }
+    body {
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 10px;
+      color: #e8e8e8;
+      font-size: 12px;
+      user-select: none;
+      box-sizing: border-box;
+      height: 100vh;
+      overflow-y: auto;   /* scroll the whole panel when content is taller than the dock */
+      overflow-x: hidden;
+    }
+    h1 {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 2px 0;
+      letter-spacing: .3px;
+    }
+    .sub { color: #8a8a8a; font-size: 10px; margin: 0 0 12px 0; }
+
+    .status {
+      display: flex; align-items: center; gap: 8px;
+      background: #2b2b2b; border-radius: 6px;
+      padding: 10px; margin-bottom: 10px;
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #666; flex: 0 0 auto;
+    }
+    .dot.rec { background: #e2413f; animation: pulse 1.4s infinite; }
+    .dot.idle { background: #5a9; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .status .label { font-weight: 600; }
+    .status .meta { color: #9a9a9a; font-size: 10px; }
+
+    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    sp-button { flex: 1; }
+
+    .stat-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+      margin-bottom: 12px;
+    }
+    .stat {
+      background: #242424; border-radius: 6px; padding: 8px 10px;
+    }
+    .stat .n { font-size: 18px; font-weight: 700; }
+    .stat .k { font-size: 9px; color: #8a8a8a; text-transform: uppercase; letter-spacing: .5px; }
+
+    .settings { border-top: 1px solid #3a3a3a; padding-top: 10px; }
+    .field { margin-bottom: 10px; }
+    .field label { display:block; font-size: 10px; color: #aaa; margin-bottom: 3px; }
+
+    #log {
+      margin-top: 10px; background: #1c1c1c; border-radius: 6px;
+      padding: 8px; height: 88px; overflow-y: auto;
+      font-family: monospace; font-size: 10px; color: #9a9a9a;
+      white-space: pre-wrap; line-height: 1.4;
+    }
+    .err { color: #e88; }
+    .ok { color: #7c9; }
+  </style>
+</head>
+<body>
+  <h1>Canvas Timelapse</h1>
+  <p class="sub">Auto-snapshots every edit → MP4</p>
+
+  <div class="status">
+    <div class="dot idle" id="dot"></div>
+    <div>
+      <div class="label" id="statusLabel">Idle</div>
+      <div class="meta" id="statusMeta">Open a document to begin</div>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat"><div class="n" id="frameCount">0</div><div class="k">Frames</div></div>
+    <div class="stat"><div class="n" id="estDur">0s</div><div class="k">Est. length</div></div>
+  </div>
+
+  <div class="row">
+    <sp-button id="btnStart" variant="cta">Start</sp-button>
+    <sp-button id="btnStop" variant="warning" disabled>Stop</sp-button>
+  </div>
+  <div class="row">
+    <sp-button id="btnExport" variant="primary" quiet>Export MP4</sp-button>
+    <sp-button id="btnReset" variant="secondary" quiet>Reset</sp-button>
+  </div>
+  <div class="row">
+    <sp-button id="btnRecover" variant="secondary" quiet style="flex:1">Recover folder…</sp-button>
+    <sp-button id="btnLibrary" variant="secondary" quiet style="flex:1">Set Library folder…</sp-button>
+  </div>
+
+  <div class="settings">
+    <div class="field">
+      <label>Video length</label>
+      <sp-dropdown id="duration" style="width:100%">
+        <sp-menu slot="options">
+          <sp-menu-item>Full length</sp-menu-item>
+          <sp-menu-item>15 seconds</sp-menu-item>
+          <sp-menu-item selected>30 seconds</sp-menu-item>
+          <sp-menu-item>60 seconds</sp-menu-item>
+        </sp-menu>
+      </sp-dropdown>
+    </div>
+    <div class="field">
+      <label>Playback FPS: <span id="fpsVal">24</span></label>
+      <input type="range" id="fps" min="6" max="60" value="24" step="1" style="width:100%"/>
+    </div>
+    <div class="field">
+      <label>Hold last frame (seconds): <span id="holdLastVal">2</span></label>
+      <input type="range" id="holdLast" min="0" max="10" value="2" step="0.5" style="width:100%"/>
+    </div>
+    <div class="field">
+      <label>Max frame size (longest edge, px)</label>
+      <sp-dropdown id="maxSize" style="width:100%">
+        <sp-menu slot="options">
+          <sp-menu-item>1280</sp-menu-item>
+          <sp-menu-item selected>1920</sp-menu-item>
+          <sp-menu-item>2560</sp-menu-item>
+          <sp-menu-item>Full res</sp-menu-item>
+        </sp-menu>
+      </sp-dropdown>
+    </div>
+    <div class="field">
+      <label>Min ms between frames (throttle)</label>
+      <sp-dropdown id="throttle" style="width:100%">
+        <sp-menu slot="options">
+          <sp-menu-item selected>0</sp-menu-item>
+          <sp-menu-item>150</sp-menu-item>
+          <sp-menu-item>300</sp-menu-item>
+          <sp-menu-item>600</sp-menu-item>
+        </sp-menu>
+      </sp-dropdown>
+    </div>
+
+    <div class="field">
+      <label>Aspect ratio (export)</label>
+      <sp-dropdown id="aspect" style="width:100%">
+        <sp-menu slot="options">
+          <sp-menu-item selected>Original</sp-menu-item>
+          <sp-menu-item>1:1 Square</sp-menu-item>
+          <sp-menu-item>9:16 Vertical (Reels/TikTok)</sp-menu-item>
+          <sp-menu-item>16:9 Horizontal (YouTube)</sp-menu-item>
+          <sp-menu-item>4:5 Portrait (Instagram)</sp-menu-item>
+        </sp-menu>
+      </sp-dropdown>
+    </div>
+    <div class="field">
+      <label>Fit mode</label>
+      <sp-dropdown id="fit" style="width:100%">
+        <sp-menu slot="options">
+          <sp-menu-item selected>Pad (letterbox, no crop)</sp-menu-item>
+          <sp-menu-item>Crop (fill, trims edges)</sp-menu-item>
+        </sp-menu>
+      </sp-dropdown>
+    </div>
+
+    <div class="field">
+      <sp-checkbox id="autoStart">Auto-start on launch (reconnect per document)</sp-checkbox>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <script src="main.js"></script>
+  <script src="export.js"></script>
+</body>
+</html>
